@@ -1,0 +1,43 @@
+name: Fetch signer
+description: >-
+  Download a release of the signer, verify its sha256 and its GitHub build
+  attestation, and place the sign-rpms binary at image/sign-rpms. Fails on any
+  mismatch. Needs gh and the repository checked out.
+
+inputs:
+  version:
+    description: Release tag of PoschLabs/gha-infisical-rpm-signer, for example v0.1.0.
+    required: true
+  sha256:
+    description: Expected sha256 of the linux_amd64 release tarball.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Download and verify the signer release
+      shell: bash
+      env:
+        SIGNER_VERSION: ${{ inputs.version }}
+        SIGNER_SHA256: ${{ inputs.sha256 }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        repo=PoschLabs/gha-infisical-rpm-signer
+        archive="gha-infisical-rpm-signer_${SIGNER_VERSION#v}_linux_amd64.tar.gz"
+        workdir="$(mktemp -d)"
+        trap 'rm -rf "${workdir}"' EXIT
+
+        curl --fail --silent --show-error --location \
+          --output "${workdir}/${archive}" \
+          "https://github.com/${repo}/releases/download/${SIGNER_VERSION}/${archive}"
+
+        echo "${SIGNER_SHA256}  ${workdir}/${archive}" | sha256sum --check --strict
+
+        gh attestation verify "${workdir}/${archive}" \
+          --repo "${repo}" \
+          --signer-workflow "${repo}/.github/workflows/release.yml" \
+          --source-ref "refs/tags/${SIGNER_VERSION}"
+
+        tar xzf "${workdir}/${archive}" -C "${workdir}" sign-rpms
+        install -m 0755 "${workdir}/sign-rpms" image/sign-rpms

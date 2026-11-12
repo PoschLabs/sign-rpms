@@ -1,0 +1,5 @@
+.superpowers/
+*.log
+*.tmp
+# signer binary placed here by the build workflow
+image/sign-rpms

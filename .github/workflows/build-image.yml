@@ -1,0 +1,96 @@
+name: Build image
+
+# One job, in order: build, smoke-test, scan, and (manual run only) publish.
+# Pull requests stop after the scan. A manual run (workflow_dispatch) then
+# pushes the image to ghcr.io and prints the digest that sign.yml is updated
+# to, through a reviewed pull request. The push reuses the layers that were
+# built, tested and scanned, so nothing is rebuilt between test and publish.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # Signer release the image is built from (requirement IMG-2). To upgrade the
+  # signer, change both values in one pull request.
+  SIGNER_VERSION: v0.1.0
+  SIGNER_SHA256: 228dd904a66ed0c0efc91562a43c6bcfc54f1adc8aab77242ab76f0ea9c6c36a
+  IMAGE: ghcr.io/poschlabs/rpm-signer
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # used only by the publish steps of a manual run
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch and verify the signer
+        # The self-repository form `$/...` is not used until it is confirmed generally available.
+        uses: ./.github/actions/fetch-signer # zizmor: ignore[self-repository]
+        with:
+          version: ${{ env.SIGNER_VERSION }}
+          sha256: ${{ env.SIGNER_SHA256 }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: image
+          load: true
+          push: false
+          tags: rpm-signer:test
+          provenance: false
+          sbom: false
+
+      - name: Smoke test
+        run: image/smoke-test.sh rpm-signer:test
+
+      - name: Scan for vulnerabilities
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: rpm-signer:test
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
+
+      - name: Log in to ghcr.io
+        if: github.event_name == 'workflow_dispatch'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Publish
+        id: push
+        if: github.event_name == 'workflow_dispatch'
+        # Same context and builder as the Build step, so every layer comes from
+        # the BuildKit cache: the tested layers are the ones pushed.
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: image
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Show the digest
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          {
+            echo "### Published image"
+            echo
+            echo "\`${IMAGE}@${DIGEST}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

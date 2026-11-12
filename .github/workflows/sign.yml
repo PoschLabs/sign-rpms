@@ -1,0 +1,131 @@
+name: Sign RPMs
+
+# Reusable workflow (ADR 0001). Caller example:
+#
+#   jobs:
+#     sign:
+#       needs: build
+#       permissions:
+#         id-token: write
+#       uses: PoschLabs/sign-rpm-action/.github/workflows/sign.yml@v1
+#       with:
+#         artifact-name: unsigned-linux-packages
+#
+# The caller uploads an artifact; every `*.rpm` file directly in its top
+# directory is signed and the signed files are uploaded as
+# `signed-artifact-name`. Subdirectories and other files are ignored.
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: Name of the artifact that contains the RPMs to sign.
+        type: string
+        required: true
+      signed-artifact-name:
+        description: Name of the artifact that receives the signed files.
+        type: string
+        required: false
+        default: signed-linux-packages
+
+permissions: {}
+
+jobs:
+  sign:
+    runs-on:
+      group: package-publishing
+      labels: [rpm-signer]
+    permissions:
+      id-token: write
+    container:
+      # Updated by reviewed pull requests with the digest from "Build image" (docs/release.md).
+      image: ghcr.io/poschlabs/rpm-signer@sha256:d28f21b079a82941ef5880d3be53f368a5c610cca027194dfa3ae4ae3acee3d7
+      options: >-
+        --user 1001
+        --cap-drop=ALL
+        --security-opt=no-new-privileges
+        --read-only
+        --tmpfs /tmp
+        --tmpfs /run/sign:mode=0700,uid=1001
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Non-secret organisation variables (ADR 0002). No secret enters the job.
+      INFISICAL_URL: ${{ vars.SIGN_INFISICAL_URL }}
+      INFISICAL_IDENTITY_ID: ${{ vars.SIGN_INFISICAL_IDENTITY_ID }}
+      INFISICAL_PROJECT_ID: ${{ vars.SIGN_INFISICAL_PROJECT_ID }}
+      INFISICAL_SECRET_PATH: ${{ vars.SIGN_INFISICAL_SECRET_PATH }}
+      OIDC_AUDIENCE: ${{ vars.SIGN_INFISICAL_URL }}
+      SIGN_TMPDIR: /run/sign
+    steps:
+      - name: Check configuration and prepare directories
+        run: |
+          missing=()
+          [ -n "${INFISICAL_URL:-}" ] || missing+=(SIGN_INFISICAL_URL)
+          [ -n "${INFISICAL_IDENTITY_ID:-}" ] || missing+=(SIGN_INFISICAL_IDENTITY_ID)
+          [ -n "${INFISICAL_PROJECT_ID:-}" ] || missing+=(SIGN_INFISICAL_PROJECT_ID)
+          [ -n "${INFISICAL_SECRET_PATH:-}" ] || missing+=(SIGN_INFISICAL_SECRET_PATH)
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing organisation variables (shared with this repository?): ${missing[*]}"
+            exit 1
+          fi
+          {
+            echo "IN_DIR=${RUNNER_TEMP}/sign-in-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            echo "OUT_DIR=${RUNNER_TEMP}/sign-out-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Check that the Docker socket is not writable
+        run: |
+          if [ -w /var/run/docker.sock ]; then
+            echo "::error::The job user can write to the Docker socket"
+            exit 1
+          fi
+
+      - name: Download unsigned artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ env.IN_DIR }}
+
+      - name: Sign and verify
+        run: |
+          mkdir -p "${OUT_DIR}"
+          cd "${IN_DIR}"
+
+          # Entries directly in the top directory whose name ends in .rpm.
+          # File names come from the caller: print them with %q so that a name
+          # cannot inject workflow commands into the log.
+          mapfile -d '' -t entries < <(find . -mindepth 1 -maxdepth 1 -name '*.rpm' -print0)
+
+          if [ "${#entries[@]}" -eq 0 ]; then
+            echo "::error::The artifact has no .rpm file in its top directory"
+            exit 1
+          fi
+
+          for entry in "${entries[@]}"; do
+            case "${entry}" in
+              *[[:cntrl:]]*)
+                printf 'Control character in file name: %q\n' "${entry#./}"
+                echo "::error::A file name contains a control character"
+                exit 1
+                ;;
+            esac
+            if [ -L "${entry}" ] || [ ! -f "${entry}" ]; then
+              printf 'Not a regular file: %q\n' "${entry#./}"
+              echo "::error::An entry named *.rpm is a directory or a symlink, not a file"
+              exit 1
+            fi
+          done
+
+          for entry in "${entries[@]}"; do
+            printf 'Signing %q\n' "${entry#./}"
+            sign-rpms -o "${OUT_DIR}/${entry#./}" "${entry}"
+          done
+
+      - name: Upload signed artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.signed-artifact-name }}
+          path: ${{ env.OUT_DIR }}
+          if-no-files-found: error
