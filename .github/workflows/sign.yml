@@ -39,7 +39,7 @@ jobs:
       id-token: write
     container:
       # Updated by reviewed pull requests with the digest from "Build image" (docs/release.md).
-      image: ghcr.io/poschlabs/rpm-signer@sha256:d28f21b079a82941ef5880d3be53f368a5c610cca027194dfa3ae4ae3acee3d7
+      image: ghcr.io/poschlabs/rpm-signer@sha256:dcfa7e564f530881ee61993e5773a91c8709b65d775d132a734137ad0bcba1b3
       options: >-
         --user 1001
         --cap-drop=ALL
