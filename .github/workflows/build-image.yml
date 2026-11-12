@@ -13,8 +13,8 @@ on:
 env:
   # Signer release the image is built from (requirement IMG-2). To upgrade the
   # signer, change both values in one pull request.
-  SIGNER_VERSION: v0.1.0
-  SIGNER_SHA256: 228dd904a66ed0c0efc91562a43c6bcfc54f1adc8aab77242ab76f0ea9c6c36a
+  SIGNER_VERSION: v1.0.0
+  SIGNER_SHA256: 0dff783b650900d5476aca052e5639932b246dc450232f3278b7c415006080e5
   IMAGE: ghcr.io/poschlabs/rpm-signer
 
 permissions:

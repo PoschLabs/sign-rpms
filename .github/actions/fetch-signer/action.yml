@@ -6,7 +6,7 @@ description: >-
 
 inputs:
   version:
-    description: Release tag of PoschLabs/gha-infisical-rpm-signer, for example v0.1.0.
+    description: Release tag of PoschLabs/infisical-rpm-signer, for example v0.1.0.
     required: true
   sha256:
     description: Expected sha256 of the linux_amd64 release tarball.
@@ -23,8 +23,8 @@ runs:
         GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
-        repo=PoschLabs/gha-infisical-rpm-signer
-        archive="gha-infisical-rpm-signer_${SIGNER_VERSION#v}_linux_amd64.tar.gz"
+        repo=PoschLabs/infisical-rpm-signer
+        archive="infisical-rpm-signer_${SIGNER_VERSION#v}_linux_amd64.tar.gz"
         workdir="$(mktemp -d)"
         trap 'rm -rf "${workdir}"' EXIT
 
