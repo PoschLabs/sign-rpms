@@ -10,6 +10,11 @@ name: Sign RPMs
 #       uses: PoschLabs/sign-rpm-action/.github/workflows/sign.yml@v1
 #       with:
 #         artifact-name: unsigned-linux-packages
+#       secrets:
+#         SIGN_INFISICAL_URL: ${{ secrets.SIGN_INFISICAL_URL }}
+#         SIGN_INFISICAL_IDENTITY_ID: ${{ secrets.SIGN_INFISICAL_IDENTITY_ID }}
+#         SIGN_INFISICAL_PROJECT_ID: ${{ secrets.SIGN_INFISICAL_PROJECT_ID }}
+#         SIGN_INFISICAL_SECRET_PATH: ${{ secrets.SIGN_INFISICAL_SECRET_PATH }}
 #
 # The caller uploads an artifact; every `*.rpm` file directly in its top
 # directory is signed and the signed files are uploaded as
@@ -27,6 +32,19 @@ on:
         type: string
         required: false
         default: signed-linux-packages
+    secrets:
+      SIGN_INFISICAL_URL:
+        description: Address of the Infisical instance (organisation secret).
+        required: true
+      SIGN_INFISICAL_IDENTITY_ID:
+        description: ID of this repository's Infisical machine identity (repository secret).
+        required: true
+      SIGN_INFISICAL_PROJECT_ID:
+        description: Infisical project that holds the signing key (organisation secret).
+        required: true
+      SIGN_INFISICAL_SECRET_PATH:
+        description: Folder in that project with the signing secrets (organisation secret).
+        required: true
 
 permissions: {}
 
@@ -51,12 +69,12 @@ jobs:
       run:
         shell: bash
     env:
-      # Non-secret organisation variables (ADR 0002). No secret enters the job.
-      INFISICAL_URL: ${{ vars.SIGN_INFISICAL_URL }}
-      INFISICAL_IDENTITY_ID: ${{ vars.SIGN_INFISICAL_IDENTITY_ID }}
-      INFISICAL_PROJECT_ID: ${{ vars.SIGN_INFISICAL_PROJECT_ID }}
-      INFISICAL_SECRET_PATH: ${{ vars.SIGN_INFISICAL_SECRET_PATH }}
-      OIDC_AUDIENCE: ${{ vars.SIGN_INFISICAL_URL }}
+      # Infisical settings are secrets so that they are masked in logs (ADR 0006).
+      INFISICAL_URL: ${{ secrets.SIGN_INFISICAL_URL }}
+      INFISICAL_IDENTITY_ID: ${{ secrets.SIGN_INFISICAL_IDENTITY_ID }}
+      INFISICAL_PROJECT_ID: ${{ secrets.SIGN_INFISICAL_PROJECT_ID }}
+      INFISICAL_SECRET_PATH: ${{ secrets.SIGN_INFISICAL_SECRET_PATH }}
+      OIDC_AUDIENCE: ${{ secrets.SIGN_INFISICAL_URL }}
       SIGN_TMPDIR: /run/sign
     steps:
       - name: Check configuration and prepare directories
@@ -67,7 +85,7 @@ jobs:
           [ -n "${INFISICAL_PROJECT_ID:-}" ] || missing+=(SIGN_INFISICAL_PROJECT_ID)
           [ -n "${INFISICAL_SECRET_PATH:-}" ] || missing+=(SIGN_INFISICAL_SECRET_PATH)
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::Missing organisation variables (shared with this repository?): ${missing[*]}"
+            echo "::error::Missing secrets (passed by the caller and shared with this repository?): ${missing[*]}"
             exit 1
           fi
           {

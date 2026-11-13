@@ -1,6 +1,6 @@
 # Infisical setup
 
-How to prepare Infisical so `sign.yml` can read the signing key. This is environment setup, not a design decision of this repository. The workflow reads the non-secret settings from Actions variables: three organisation variables and one identity ID variable per repository (ADR 0002).
+How to prepare Infisical so `sign.yml` can read the signing key. This is environment setup, not a design decision of this repository. The workflow reads the settings from Actions secrets: three organisation secrets and one identity ID secret per repository, passed by the caller (ADR 0006).
 
 ## One identity per repository
 
@@ -29,14 +29,14 @@ Rules:
 ## Onboarding a repository
 
 1. Create a machine identity for the repository with the settings above (claim `repository` = that repository) and give it read access to the signing folder.
-2. In the repository, define the Actions variable `SIGN_INFISICAL_IDENTITY_ID` with that identity's ID.
-3. Share the three organisation variables `SIGN_INFISICAL_URL`, `SIGN_INFISICAL_PROJECT_ID` and `SIGN_INFISICAL_SECRET_PATH` (ADR 0002) with the repository.
+2. In the repository, define the Actions secret `SIGN_INFISICAL_IDENTITY_ID` with that identity's ID.
+3. Share the three organisation secrets `SIGN_INFISICAL_URL`, `SIGN_INFISICAL_PROJECT_ID` and `SIGN_INFISICAL_SECRET_PATH` (ADR 0006) with the repository.
 4. Add the repository to the signing runner group's allowed repositories.
-5. In the repository, call `sign.yml@v1` with `permissions: id-token: write`.
+5. In the repository, call `sign.yml@v1` with `permissions: id-token: write` and the `secrets:` block from the README.
 
 ## Removing a repository
 
-Delete the repository's machine identity (and remove its `SIGN_INFISICAL_IDENTITY_ID` variable and its runner group entry). It can no longer log in.
+Delete the repository's machine identity (and remove its `SIGN_INFISICAL_IDENTITY_ID` secret and its runner group entry). It can no longer log in.
 
 ## Spike facts that this guide relies on
 

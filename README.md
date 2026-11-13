@@ -15,20 +15,25 @@ jobs:
     with:
       artifact-name: unsigned-linux-packages
       # signed-artifact-name: signed-linux-packages   # default
+    secrets:
+      SIGN_INFISICAL_URL: ${{ secrets.SIGN_INFISICAL_URL }}
+      SIGN_INFISICAL_IDENTITY_ID: ${{ secrets.SIGN_INFISICAL_IDENTITY_ID }}
+      SIGN_INFISICAL_PROJECT_ID: ${{ secrets.SIGN_INFISICAL_PROJECT_ID }}
+      SIGN_INFISICAL_SECRET_PATH: ${{ secrets.SIGN_INFISICAL_SECRET_PATH }}
 ```
 
 The signed files are in the artifact `signed-linux-packages` (or the name given in `signed-artifact-name`). Callers must use the `v1` tag (ADR 0003).
 
-### Organisation variables
+### Secrets
 
-The workflow reads these non-secret variables from the organisation, so each calling repository must be shared them (ADR 0002). The workflow fails early, naming the variable, if one is missing.
+The workflow reads the Infisical settings from secrets, so that they are masked in the logs of public repositories (ADR 0006). The caller passes them as in the example above. The workflow fails early, naming the secret, if one is empty.
 
-| Variable | Content |
-|----------|---------|
-| `SIGN_INFISICAL_URL` | Address of the Infisical instance |
-| `SIGN_INFISICAL_IDENTITY_ID` | ID of the organisation's machine identity |
-| `SIGN_INFISICAL_PROJECT_ID` | Infisical project that holds the signing key |
-| `SIGN_INFISICAL_SECRET_PATH` | Folder in that project with the three signing secrets |
+| Secret | Level | Content |
+|--------|-------|---------|
+| `SIGN_INFISICAL_URL` | Organisation, shared with the repository | Address of the Infisical instance |
+| `SIGN_INFISICAL_IDENTITY_ID` | Repository | ID of the repository's own machine identity |
+| `SIGN_INFISICAL_PROJECT_ID` | Organisation, shared with the repository | Infisical project that holds the signing key |
+| `SIGN_INFISICAL_SECRET_PATH` | Organisation, shared with the repository | Folder in that project with the three signing secrets |
 
 ## Setup
 
