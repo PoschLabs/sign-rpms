@@ -1,41 +1,42 @@
 # Infisical setup
 
-How to prepare Infisical so `sign.yml` can read the signing key. This is environment setup, not a design decision of this repository. The workflow reads the non-secret settings from organisation variables (ADR 0002).
+How to prepare Infisical so `sign.yml` can read the signing key. This is environment setup, not a design decision of this repository. The workflow reads the settings from Actions secrets: three organisation secrets and one identity ID secret per repository, passed by the caller (ADR 0006).
 
-## One identity for the whole organisation
+## One identity per repository
 
-Create one machine identity with **OIDC Auth** and read-only access to a single folder of the `rpm-signing` project. The signer reads three secrets there: `GPG_PRIVATE_KEY` (the exported signing subkey), `GPG_PASSPHRASE` and `GPG_FINGERPRINT`. Only the signing subkey is stored in Infisical; the primary key stays offline.
+Create one machine identity for each repository that signs, with **OIDC Auth** and read-only access to the same single folder of the `rpm-signing` project. Infisical does not accept a list of repositories in one claim, so identities cannot be shared between repositories. The signer reads three secrets there: `GPG_PRIVATE_KEY` (the exported signing subkey), `GPG_PASSPHRASE` and `GPG_FINGERPRINT`. Only the signing subkey is stored in Infisical; the primary key stays offline.
 
-Identity settings:
+Identity settings (the same for every identity except `repository`):
 
 | Setting | Value |
 |---------|-------|
 | Issuer | `https://token.actions.githubusercontent.com` |
 | Audience | the value `sign.yml` requests (`OIDC_AUDIENCE`) |
 | Claim `repository_owner` | `PoschLabs` |
-| Claim `repository` | the list of repositories allowed to sign, for example `PoschLabs/{repo-a,repo-b}` |
+| Claim `repository` | exactly one repository, for example `PoschLabs/repo-a` |
 | Claim `job_workflow_ref` | exactly `PoschLabs/sign-rpm-action/.github/workflows/sign.yml@refs/tags/v1` |
 | Access token TTL, max uses | short TTL, low max uses |
 | Trusted IPs | the signing runner VM |
 
 Rules:
 
-- **Unverified:** that one claim can hold a list of repositories. The Infisical documentation shows glob alternation (`{a,b}`) but this has not been tested. Test it before relying on it: a listed repository must log in (200), an unlisted one must get 401. If a list does not work, ADR 0002 changes to one identity per repository.
+- Do not put a list or glob alternation (`{a,b}`) in `repository`: this was tested and does not work. Use one hardcoded repository per identity.
 - Do not bind on `sub`: it uses the ID-based format (`repo:PoschLabs@<id>/<repo>@<id>:ref:...`).
-- Do not use `*`: it also matches `/` and `:`. Use hardcoded values and brace lists only.
+- Do not use `*`: it also matches `/` and `:`. Use hardcoded values only.
 - Do not pin `ref` or `workflow_ref`: both belong to the caller.
 - `job_workflow_ref` is what makes only this repository's reviewed workflow able to obtain the key. It must match the tag callers use (ADR 0003).
 
 ## Onboarding a repository
 
-1. Add the repository to the identity's `repository` claim.
-2. Share the organisation variables (ADR 0002) with the repository.
-3. Add the repository to the signing runner group's allowed repositories.
-4. In the repository, call `sign.yml@v1` with `permissions: id-token: write`.
+1. Create a machine identity for the repository with the settings above (claim `repository` = that repository) and give it read access to the signing folder.
+2. In the repository, define the Actions secret `SIGN_INFISICAL_IDENTITY_ID` with that identity's ID.
+3. Share the three organisation secrets `SIGN_INFISICAL_URL`, `SIGN_INFISICAL_PROJECT_ID` and `SIGN_INFISICAL_SECRET_PATH` (ADR 0006) with the repository.
+4. Add the repository to the signing runner group's allowed repositories.
+5. In the repository, call `sign.yml@v1` with `permissions: id-token: write` and the `secrets:` block from the README.
 
 ## Removing a repository
 
-Remove it from the identity's `repository` claim. It can no longer log in.
+Delete the repository's machine identity (and remove its `SIGN_INFISICAL_IDENTITY_ID` secret and its runner group entry). It can no longer log in.
 
 ## Spike facts that this guide relies on
 

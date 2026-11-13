@@ -10,22 +10,22 @@ Each requirement names the ADR that decides it and how it is checked: **lint** (
 
 | ID | Requirement | ADR | Check |
 |----|-------------|-----|-------|
-| WF-1 | `.github/workflows/sign.yml` is a reusable workflow (`workflow_call`) with the inputs `artifact-name` (required) and `signed-artifact-name` (default `signed-linux-packages`), and no secrets. | 0001 | lint, manual |
+| WF-1 | `.github/workflows/sign.yml` is a reusable workflow (`workflow_call`) with the inputs `artifact-name` (required) and `signed-artifact-name` (default `signed-linux-packages`), and the four secrets of WF-8. | 0001, 0006 | lint, manual |
 | WF-2 | The job runs on the signing runner group, in the signer image referenced by `@sha256:` digest. | 0001 | lint |
 | WF-3 | The workflow downloads the named artifact with `actions/download-artifact`. Nothing is checked out. | 0001 | manual |
 | WF-4 | The workflow signs every `*.rpm` file directly in the artifact's top directory, one signer call per file, in one job, passing each file as `./<name>` and writing the result under the original name with the signer's `-o` option. There is no limit on the number of files. | 0001 | manual |
 | WF-5 | The signed files are uploaded as one artifact named by `signed-artifact-name`. | 0001 | manual |
 | WF-6 | The workflow fails with a clear message, and uploads nothing, if: there is no `*.rpm` in the top directory; an entry named `*.rpm` is a directory or symlink; a file name contains a control character (so a name cannot inject workflow commands into the log); or the signer fails for any file. | 0001 | manual |
 | WF-7 | Subdirectories and their contents, non-RPM files and names that do not end in lowercase `.rpm` are ignored and not copied. | 0001 | manual |
-| WF-8 | The workflow fails early, naming the variable, if an organisation variable is missing: `SIGN_INFISICAL_URL`, `SIGN_INFISICAL_IDENTITY_ID`, `SIGN_INFISICAL_PROJECT_ID`, `SIGN_INFISICAL_SECRET_PATH`. | 0002 | manual |
-| WF-9 | The workflow passes the signer its settings only as environment variables: `INFISICAL_URL`, `INFISICAL_IDENTITY_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_SECRET_PATH`, `OIDC_AUDIENCE` (set from `SIGN_INFISICAL_URL`, as in the earlier workflow) and `SIGN_TMPDIR=/run/sign`. | 0002, 0004 | lint |
+| WF-8 | The workflow declares the secrets `SIGN_INFISICAL_URL`, `SIGN_INFISICAL_IDENTITY_ID`, `SIGN_INFISICAL_PROJECT_ID` and `SIGN_INFISICAL_SECRET_PATH` as required and fails early, naming the secret, if one is empty. The identity ID is a secret of the calling repository (one machine identity per repository); the other three are organisation secrets. | 0006 | lint, manual |
+| WF-9 | The workflow passes the signer its settings only as environment variables: `INFISICAL_URL`, `INFISICAL_IDENTITY_ID`, `INFISICAL_PROJECT_ID`, `INFISICAL_SECRET_PATH`, `OIDC_AUDIENCE` (set from `SIGN_INFISICAL_URL`, as in the earlier workflow) and `SIGN_TMPDIR=/run/sign`. The four settings come from `secrets`. | 0004, 0006 | lint |
 | WF-10 | The job container uses exactly these options: `--user 1001 --cap-drop=ALL --security-opt=no-new-privileges --read-only --tmpfs /tmp --tmpfs /run/sign:mode=0700,uid=1001`. | 0004 | lint |
 
 ## Security
 
 | ID | Requirement | ADR | Check |
 |----|-------------|-----|-------|
-| SEC-1 | No secret is printed, logged, committed or passed as a command-line argument. The only credentials in the job are the runner's OIDC request variables, which the signer reads from the environment. | 0001 | lint, review |
+| SEC-1 | No secret is printed, logged, committed or passed as a command-line argument. The only credentials in the job are the runner's OIDC request variables, which the signer reads from the environment. The Infisical settings are secrets and are masked (ADR 0006). | 0001, 0006 | lint, review |
 | SEC-2 | The workflow's `permissions` are `id-token: write` and nothing else. | 0001 | lint |
 | SEC-3 | No workflow input selects the runner, image, signer arguments, Infisical target or OIDC audience. | 0001 | lint |
 | SEC-4 | Every action is pinned by full commit SHA with the release tag in a comment. | AGENTS.md | lint |
@@ -51,7 +51,7 @@ Each requirement names the ADR that decides it and how it is checked: **lint** (
 |----|-------------|-----|-------|
 | TST-1 | CI lints the workflows with `actionlint` and `zizmor`, the Dockerfile with `hadolint` and the smoke-test script with `shellcheck`. | — | lint |
 | TST-2 | CI builds the image and runs `sign-rpms --help`, `gpg --version` and `rpmsign --version` inside it under the WF-10 container options. | 0004, 0005 | smoke |
-| TST-3 | Before the `v1` tag moves to a new release, the architect runs `sign.yml` from the hello-repo project on the signing runner and checks the signed RPM, including the cases in WF-6 and WF-7 and SEC-6. The first run also verifies that Infisical accepts a list of repositories in one claim (ADR 0002): a listed repository signs, an unlisted one is refused. | — | manual |
+| TST-3 | Before the `v1` tag moves to a new release, the architect runs `sign.yml` from the hello-repo project on the signing runner and checks the signed RPM, including the cases in WF-6 and WF-7 and SEC-6. The run also verifies one identity per repository (ADR 0006): a repository signs with its own identity ID and is refused with another repository's. | — | manual |
 
 The signer's own behaviour (exit codes, cleanup, masking, the Infisical contract) is tested in the signer repository and is not repeated here.
 
@@ -59,6 +59,6 @@ The signer's own behaviour (exit codes, cleanup, masking, the Infisical contract
 
 | ID | Requirement |
 |----|-------------|
-| DOC-1 | The README describes how the workflow behaves (WF-4 to WF-7), how it is tested, its limitations, a caller example and the organisation variables from WF-8 (ADR 0002 refers to the README for the names). |
+| DOC-1 | The README describes how the workflow behaves (WF-4 to WF-7), how it is tested, its limitations, a caller example and the secrets from WF-8, including the caller's `secrets:` block. |
 | DOC-2 | `docs/setup/` holds the setup guides for the runner, the Infisical identity (including onboarding and removing a repository) and the signing key. |
 | DOC-3 | The release procedure is written down: bump the signer pin, build and publish the image, open the pull request that updates the digest in `sign.yml`, run TST-3, then move `v1`. |

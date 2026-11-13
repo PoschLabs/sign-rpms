@@ -57,8 +57,8 @@ Checked locally: both linters are clean; the fetch script ran against the real v
 - Write `.github/workflows/sign.yml`:
   - `on: workflow_call` with `artifact-name` (required) and `signed-artifact-name` (default `signed-linux-packages`); top-level `permissions: id-token: write` only.
   - `runs-on: group: signing, labels: [rpm-signer]`; `container.image` is the digest from task 3; `container.options` exactly as in WF-10.
-  - `defaults.run.shell: bash`. `env` carries the four `SIGN_*` org variables as `INFISICAL_*`, `OIDC_AUDIENCE` from `SIGN_INFISICAL_URL`, `SIGN_TMPDIR=/run/sign`, and per-run `IN_DIR` and `OUT_DIR` under `runner.temp` (include `run_id` and `run_attempt`).
-  - Step 1, check variables: fail with the variable name if one is empty (WF-8).
+  - `defaults.run.shell: bash`. `on.workflow_call.secrets` declares the four `SIGN_INFISICAL_*` secrets (required); `env` carries them as `INFISICAL_*` from `secrets`, `OIDC_AUDIENCE` from `SIGN_INFISICAL_URL`, `SIGN_TMPDIR=/run/sign`, and per-run `IN_DIR` and `OUT_DIR` under `runner.temp` (include `run_id` and `run_attempt`).
+  - Step 1, check secrets: fail with the secret name if one is empty (WF-8).
   - Step 2, `actions/download-artifact` into `IN_DIR` (WF-3).
   - Step 3, sign: iterate over entries directly under `IN_DIR` (`find "$IN_DIR" -mindepth 1 -maxdepth 1 -name '*.rpm' -print0`), fail if an entry is not a regular file or is a symlink, fail if there are none, then for each: `sign-rpms -o "$OUT_DIR/$name" "./$name"` run from `IN_DIR` (WF-4, WF-6, WF-7). Any non-zero exit stops the step.
   - Step 4, `actions/upload-artifact` of `OUT_DIR` with `if-no-files-found: error` (WF-5). Because step 3 fails first, nothing is uploaded on failure.
@@ -68,23 +68,23 @@ Checked locally: both linters are clean; the fetch script ran against the real v
 
 ## 5. Documentation (DOC-1, DOC-3) — done
 
-- README: add the organisation variable names (WF-8) and a caller example (`uses: PoschLabs/sign-rpm-action/.github/workflows/sign.yml@v1`, `permissions: id-token: write`, `with: artifact-name: ...`).
+- README: add the secret names (WF-8) and a caller example (`uses: PoschLabs/sign-rpm-action/.github/workflows/sign.yml@v1`, `permissions: id-token: write`, `with: artifact-name: ...`, `secrets:` block).
 - Add `docs/release.md` with the procedure of DOC-3: bump `SIGNER_VERSION` and `SIGNER_SHA256`, run the build workflow, open the pull request that updates the digest in `sign.yml`, run the manual test (task 7), then move the `v1` tag.
 - Done when: a reader can onboard a repository and cut a release from the docs alone.
 
 ## 6. Repository and organisation settings (manual, SEC-7, WF-8)
 
-Not code. Follow `docs/setup/`: organisation variables shared with the repositories, the runner group restricted to `sign.yml@refs/tags/v1`, the Infisical identity and its claims, the signing key secrets, and the tag ruleset for `v*` tags on this repository (SEC-7). Record that each is done in the pull request that releases `v1`.
+Not code. Follow `docs/setup/`: organisation secrets shared with the repositories and one identity ID secret per repository, the runner group restricted to `sign.yml@refs/tags/v1`, one Infisical identity per repository and its claims, the signing key secrets, and the tag ruleset for `v*` tags on this repository (SEC-7). Record that each is done in the pull request that releases `v1`.
 
 ## 7. End-to-end run and release (TST-3)
 
 1. Publish the image (task 3) and set its digest in `sign.yml` (task 4) in a pull request; merge after lint and smoke pass.
 2. Tag a pre-release (for example `v0.1.0`) and add it to the runner group and the Infisical `job_workflow_ref` as exact tags, as a temporary entry.
-3. From the hello-repo project call that tag with: one RPM, several RPMs, an artifact with no RPM, a directory and a symlink named `*.rpm`, a non-RPM file, a subdirectory, a file name starting with `-`, and a failing signer call (for example a file that is not an RPM). Verify the signed RPMs, and that a repository not in the Infisical list is refused.
+3. From the hello-repo project call that tag with: one RPM, several RPMs, an artifact with no RPM, a directory and a symlink named `*.rpm`, a non-RPM file, a subdirectory, a file name starting with `-`, and a failing signer call (for example a file that is not an RPM). Verify the signed RPMs, and that a repository is refused when it uses another repository's identity ID.
 4. If all pass, create `v1`, remove the temporary tag entries and call `@v1` from hello-repo once more.
 
 ## Risks to watch
 
-- The Infisical claim list is untested (ADR 0002); step 7.3 is its first test. If it fails, ADR 0002 and WF-8 change before `v1`.
+- Callers already on `@v1` must add the `secrets:` block (ADR 0006); decide before release whether this goes into `v1` or a new major version (ADR 0003).
 - The signer v0.1.0 tarball's contents were checked (`sign-rpms`, `LICENSE`, `README.md`), but the attestation verification command has not been run against it yet; task 3 will show whether the attestation matches the tarball.
 - Workspace files written by the container (uid 1001) can block the next job; the runner cleanup in `docs/setup/runner.md` must be in place before step 7.3.
